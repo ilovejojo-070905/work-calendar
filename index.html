@@ -731,7 +731,8 @@
 const GCAL_CLIENT_ID = '934932842529-fv8k5hop5566qmgrvrd75j82i3bd80mk.apps.googleusercontent.com';
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 
-let gcalToken = localStorage.getItem('gcalToken') || null;
+let gcalToken = null; // 액세스 토큰은 메모리에만 저장 (1시간 만료)
+let gcalConnected = localStorage.getItem('gcalConnected') === 'true';
 let googleEvents = JSON.parse(localStorage.getItem('googleEvents') || '[]');
 let tokenClient = null;
 
@@ -744,27 +745,37 @@ function initGoogleAuth() {
     client_id: GCAL_CLIENT_ID,
     scope: GCAL_SCOPE,
     callback: async (resp) => {
-      if (resp.error) { showToast('Google 로그인 실패: ' + resp.error); return; }
+      if (resp.error) {
+        if (resp.error !== 'interaction_required' && resp.error !== 'popup_closed_by_user') {
+          showToast('Google 로그인 실패: ' + resp.error);
+        }
+        return;
+      }
       gcalToken = resp.access_token;
-      localStorage.setItem('gcalToken', gcalToken);
-      await syncGcal();
+      gcalConnected = true;
+      localStorage.setItem('gcalConnected', 'true');
+      await fetchGcalEvents();
     },
   });
-  if (gcalToken) {
+
+  if (gcalConnected) {
     updateGcalUI(true);
-    syncGcal();
+    // 이전에 연결된 경우 팝업 없이 조용히 새 토큰 발급
+    tokenClient.requestAccessToken({ prompt: '' });
   }
 }
 
 function handleGcalBtn() {
-  if (gcalToken) {
-    syncGcal();
-  } else {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  }
+  // 첫 연결은 동의 화면, 이후는 조용히 토큰 갱신
+  tokenClient.requestAccessToken({ prompt: gcalConnected ? '' : 'consent' });
 }
 
-async function syncGcal() {
+function syncGcal() {
+  // 매번 새 토큰으로 동기화 (만료 토큰 문제 방지)
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+async function fetchGcalEvents() {
   if (!gcalToken) return;
   showToast('Google 캘린더 동기화 중...');
   try {
@@ -773,26 +784,32 @@ async function syncGcal() {
     const timeMax = new Date(now.getFullYear(), now.getMonth() + 4, 0).toISOString();
 
     const res = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=500`,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=500`,
       { headers: { Authorization: 'Bearer ' + gcalToken } }
     );
 
     if (res.status === 401) {
+      gcalConnected = false;
       gcalToken = null;
-      localStorage.removeItem('gcalToken');
+      localStorage.removeItem('gcalConnected');
       updateGcalUI(false);
-      showToast('Google 세션 만료 — 다시 연결해 주세요.');
+      showToast('Google 인증 만료 — 다시 연결해 주세요.');
       return;
     }
 
     const data = await res.json();
-    googleEvents = (data.items || []).map(item => {
+    if (!data.items) {
+      showToast('일정을 불러오지 못했습니다: ' + (data.error?.message || '알 수 없는 오류'));
+      return;
+    }
+
+    googleEvents = data.items.map(item => {
       const isAllDay = !!item.start.date;
       const startStr = item.start.dateTime || item.start.date;
       const endStr = item.end.dateTime || item.end.date;
       const date = startStr.slice(0, 10);
       const startTime = isAllDay ? '' : startStr.slice(11, 16);
-      const endTime = isAllDay ? '' : endStr.slice(11, 16);
+      const endTime = isAllDay ? '' : (endStr ? endStr.slice(11, 16) : '');
       return {
         id: 'g_' + item.id,
         title: item.summary || '(제목 없음)',
@@ -817,11 +834,15 @@ async function syncGcal() {
 }
 
 function disconnectGcal() {
+  const tokenToRevoke = gcalToken;
   gcalToken = null;
+  gcalConnected = false;
   googleEvents = [];
-  localStorage.removeItem('gcalToken');
+  localStorage.removeItem('gcalConnected');
   localStorage.removeItem('googleEvents');
-  if (typeof google !== 'undefined') google.accounts.oauth2.revoke(gcalToken, () => {});
+  if (typeof google !== 'undefined' && tokenToRevoke) {
+    google.accounts.oauth2.revoke(tokenToRevoke, () => {});
+  }
   updateGcalUI(false);
   render();
   showToast('Google 캘린더 연결이 해제되었습니다.');
@@ -1106,8 +1127,9 @@ function miniGoto(y, m, d) {
 // Upcoming
 function renderUpcoming() {
   const todayStr = fmtDate(today);
-  const upcomingEvs = events
-    .filter(e => e.date >= todayStr && !hiddenCats.includes(e.category))
+  const localEvs = events.filter(e => e.date >= todayStr && !hiddenCats.includes(e.category));
+  const gcalEvs = googleEvents.filter(e => e.date >= todayStr);
+  const upcomingEvs = [...localEvs, ...gcalEvs]
     .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime||'').localeCompare(b.startTime||''))
     .slice(0, 7);
 
@@ -1119,15 +1141,16 @@ function renderUpcoming() {
 
   const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   list.innerHTML = upcomingEvs.map(ev => {
-    const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+    const isG = ev.source === 'google';
+    const color = isG ? '#34a853' : (CATEGORIES[ev.category] || CATEGORIES.etc).color;
     const d = parseDate(ev.date);
     const dateStr = ev.date === todayStr ? '오늘' :
       `${monthNames[d.getMonth()]} ${d.getDate()}일`;
     const timeStr = ev.startTime ? ` ${ev.startTime}` : '';
     return `<div class="upcoming-item" onclick="showDetail('${ev.id}', event)">
-      <div class="upcoming-dot" style="background:${cat.color}"></div>
+      <div class="upcoming-dot" style="background:${color}"></div>
       <div class="upcoming-info">
-        <div class="title">${ev.title}</div>
+        <div class="title">${isG ? 'G ' : ''}${ev.title}</div>
         <div class="date">${dateStr}${timeStr}</div>
       </div>
     </div>`;
