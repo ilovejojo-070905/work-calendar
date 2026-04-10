@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>업무 달력</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -513,6 +514,45 @@
 
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* Google Calendar */
+    .gcal-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      background: white;
+      color: #444;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .gcal-btn:hover { background: #f5f5f5; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .gcal-btn.connected { background: #e8f5e9; color: #2e7d32; }
+    .gcal-btn svg { flex-shrink: 0; }
+
+    .gcal-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      padding: 6px 0;
+    }
+    .gcal-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+    .gcal-dot.on { background: #34a853; }
+
+    .event-chip.gcal { border-left-color: #34a853 !important; }
+    .event-chip .gcal-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #34a853;
+      margin-right: 2px;
+    }
+
     /* Responsive */
     @media (max-width: 900px) {
       .main-layout { flex-direction: column; }
@@ -539,6 +579,10 @@
 <header>
   <h1>📅 업무 달력</h1>
   <div class="header-right">
+    <button id="gcal-btn" class="gcal-btn" onclick="handleGcalBtn()">
+      <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      <span id="gcal-btn-label">Google 캘린더 연동</span>
+    </button>
     <button class="btn btn-ghost" onclick="exportEvents()">내보내기</button>
     <button class="btn btn-primary" onclick="openAddModal()">+ 일정 추가</button>
   </div>
@@ -571,6 +615,20 @@
     <div class="sidebar-card">
       <h3>다가오는 일정</h3>
       <div class="upcoming-list" id="upcoming-list"></div>
+    </div>
+
+    <!-- Google Calendar status -->
+    <div class="sidebar-card" id="gcal-sidebar">
+      <h3>Google 캘린더</h3>
+      <div class="gcal-status">
+        <div class="gcal-dot" id="gcal-dot"></div>
+        <span id="gcal-status-text">연결 안 됨</span>
+      </div>
+      <div id="gcal-sync-info" style="display:none; margin-top:8px;">
+        <div style="font-size:0.78rem; color:#888; margin-bottom:8px;" id="gcal-count-text"></div>
+        <button class="btn" style="font-size:0.78rem; padding:5px 10px; background:#f0f2f5; width:100%;" onclick="syncGcal()">새로고침</button>
+        <button class="btn" style="font-size:0.78rem; padding:5px 10px; background:#fce4ec; color:#c62828; width:100%; margin-top:4px;" onclick="disconnectGcal()">연결 해제</button>
+      </div>
     </div>
 
     <!-- Category filter -->
@@ -669,6 +727,130 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── Google Calendar ─────────────────────────────────────────────────────────
+const GCAL_CLIENT_ID = '544737843517-7rg5ivhvo3k064lkusaj1hng70arbf49.apps.googleusercontent.com';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+
+let gcalToken = localStorage.getItem('gcalToken') || null;
+let googleEvents = JSON.parse(localStorage.getItem('googleEvents') || '[]');
+let tokenClient = null;
+
+function initGoogleAuth() {
+  if (typeof google === 'undefined') {
+    setTimeout(initGoogleAuth, 500);
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_CLIENT_ID,
+    scope: GCAL_SCOPE,
+    callback: async (resp) => {
+      if (resp.error) { showToast('Google 로그인 실패: ' + resp.error); return; }
+      gcalToken = resp.access_token;
+      localStorage.setItem('gcalToken', gcalToken);
+      await syncGcal();
+    },
+  });
+  if (gcalToken) {
+    updateGcalUI(true);
+    syncGcal();
+  }
+}
+
+function handleGcalBtn() {
+  if (gcalToken) {
+    syncGcal();
+  } else {
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  }
+}
+
+async function syncGcal() {
+  if (!gcalToken) return;
+  showToast('Google 캘린더 동기화 중...');
+  try {
+    const now = new Date();
+    const timeMin = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString();
+    const timeMax = new Date(now.getFullYear(), now.getMonth() + 4, 0).toISOString();
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=500`,
+      { headers: { Authorization: 'Bearer ' + gcalToken } }
+    );
+
+    if (res.status === 401) {
+      gcalToken = null;
+      localStorage.removeItem('gcalToken');
+      updateGcalUI(false);
+      showToast('Google 세션 만료 — 다시 연결해 주세요.');
+      return;
+    }
+
+    const data = await res.json();
+    googleEvents = (data.items || []).map(item => {
+      const isAllDay = !!item.start.date;
+      const startStr = item.start.dateTime || item.start.date;
+      const endStr = item.end.dateTime || item.end.date;
+      const date = startStr.slice(0, 10);
+      const startTime = isAllDay ? '' : startStr.slice(11, 16);
+      const endTime = isAllDay ? '' : endStr.slice(11, 16);
+      return {
+        id: 'g_' + item.id,
+        title: item.summary || '(제목 없음)',
+        date,
+        startTime,
+        endTime,
+        location: item.location || '',
+        memo: item.description || '',
+        category: 'gcal',
+        source: 'google',
+        htmlLink: item.htmlLink,
+      };
+    });
+
+    localStorage.setItem('googleEvents', JSON.stringify(googleEvents));
+    updateGcalUI(true);
+    render();
+    showToast(`Google 캘린더 동기화 완료 (${googleEvents.length}개)`);
+  } catch (e) {
+    showToast('동기화 실패: ' + e.message);
+  }
+}
+
+function disconnectGcal() {
+  gcalToken = null;
+  googleEvents = [];
+  localStorage.removeItem('gcalToken');
+  localStorage.removeItem('googleEvents');
+  if (typeof google !== 'undefined') google.accounts.oauth2.revoke(gcalToken, () => {});
+  updateGcalUI(false);
+  render();
+  showToast('Google 캘린더 연결이 해제되었습니다.');
+}
+
+function updateGcalUI(connected) {
+  const dot = document.getElementById('gcal-dot');
+  const statusText = document.getElementById('gcal-status-text');
+  const syncInfo = document.getElementById('gcal-sync-info');
+  const btn = document.getElementById('gcal-btn');
+  const btnLabel = document.getElementById('gcal-btn-label');
+  const countText = document.getElementById('gcal-count-text');
+
+  if (connected) {
+    dot.classList.add('on');
+    statusText.textContent = '연결됨';
+    syncInfo.style.display = 'block';
+    btn.classList.add('connected');
+    btnLabel.textContent = 'Google 동기화';
+    countText.textContent = `${googleEvents.length}개 일정 동기화됨`;
+  } else {
+    dot.classList.remove('on');
+    statusText.textContent = '연결 안 됨';
+    syncInfo.style.display = 'none';
+    btn.classList.remove('connected');
+    btnLabel.textContent = 'Google 캘린더 연동';
+  }
+}
+
 // ─── Data ───────────────────────────────────────────────────────────────────
 const CATEGORIES = {
   meeting:  { label: '회의',    color: '#1a73e8', bg: '#e8f0fe' },
@@ -769,11 +951,18 @@ function renderMonth(container) {
     const overflow = dayEvents.length - 3;
 
     visible.forEach(ev => {
-      const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
-      html += `<div class="event-chip"
-        style="background:${cat.bg};color:${cat.color};border-left:3px solid ${cat.color}"
-        onclick="showDetail('${ev.id}', event)"
-        title="${ev.title}">${ev.title}</div>`;
+      if (ev.source === 'google') {
+        html += `<div class="event-chip gcal"
+          style="background:#e8f5e9;color:#2e7d32;border-left:3px solid #34a853"
+          onclick="showDetail('${ev.id}', event)"
+          title="${ev.title}"><span class="gcal-badge">G</span>${ev.title}</div>`;
+      } else {
+        const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+        html += `<div class="event-chip"
+          style="background:${cat.bg};color:${cat.color};border-left:3px solid ${cat.color}"
+          onclick="showDetail('${ev.id}', event)"
+          title="${ev.title}">${ev.title}</div>`;
+      }
     });
 
     if (overflow > 0) {
@@ -843,10 +1032,14 @@ function renderWeek(container) {
         topPx = idx * 26;
         heightPx = 24;
       }
-      const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+      const isG = ev.source === 'google';
+      const bg = isG ? '#e8f5e9' : (CATEGORIES[ev.category] || CATEGORIES.etc).bg;
+      const color = isG ? '#2e7d32' : (CATEGORIES[ev.category] || CATEGORIES.etc).color;
+      const border = isG ? '#34a853' : color;
+      const label = isG ? `<span class="gcal-badge">G</span>${ev.title}` : ev.title;
       html += `<div class="week-event"
-        style="top:${topPx}px;height:${heightPx}px;background:${cat.bg};color:${cat.color};border-left:3px solid ${cat.color}"
-        onclick="showDetail('${ev.id}', event)">${ev.title}</div>`;
+        style="top:${topPx}px;height:${heightPx}px;background:${bg};color:${color};border-left:3px solid ${border}"
+        onclick="showDetail('${ev.id}', event)">${label}</div>`;
     });
 
     html += `</div>`;
@@ -864,7 +1057,9 @@ function getWeekStart(d) {
 }
 
 function getEventsForDate(ds) {
-  return events.filter(e => e.date === ds && !hiddenCats.includes(e.category));
+  const local = events.filter(e => e.date === ds && !hiddenCats.includes(e.category));
+  const gcal = googleEvents.filter(e => e.date === ds);
+  return [...local, ...gcal];
 }
 
 // Mini calendar
@@ -1045,12 +1240,15 @@ function saveEvent() {
 
 function showDetail(id, e) {
   if (e) e.stopPropagation();
-  const ev = events.find(ev => ev.id === id);
+  const ev = events.find(ev => ev.id === id) || googleEvents.find(ev => ev.id === id);
   if (!ev) return;
   detailId = id;
-  const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
 
-  document.getElementById('detail-color-bar').style.background = cat.color;
+  const isG = ev.source === 'google';
+  const color = isG ? '#34a853' : (CATEGORIES[ev.category] || CATEGORIES.etc).color;
+  const catLabel = isG ? 'Google 캘린더' : (CATEGORIES[ev.category] || CATEGORIES.etc).label;
+
+  document.getElementById('detail-color-bar').style.background = color;
   document.getElementById('detail-title').textContent = ev.title;
 
   const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
@@ -1060,12 +1258,20 @@ function showDetail(id, e) {
 
   let fieldsHtml = `
     <div class="detail-field"><span class="icon">📅</span><div class="value">${dateStr}${timeStr}</div></div>
-    <div class="detail-field"><span class="icon">🏷️</span><div class="value" style="color:${cat.color}">${cat.label}</div></div>
+    <div class="detail-field"><span class="icon">🏷️</span><div class="value" style="color:${color}">${isG ? '🟢 ' : ''}${catLabel}</div></div>
   `;
   if (ev.location) fieldsHtml += `<div class="detail-field"><span class="icon">📍</span><div class="value">${ev.location}</div></div>`;
   if (ev.memo) fieldsHtml += `<div class="detail-field"><span class="icon">📝</span><div class="value" style="white-space:pre-wrap">${ev.memo}</div></div>`;
+  if (isG && ev.htmlLink) fieldsHtml += `<div class="detail-field"><span class="icon">🔗</span><div class="value"><a href="${ev.htmlLink}" target="_blank" style="color:#1a73e8">Google 캘린더에서 열기</a></div></div>`;
 
   document.getElementById('detail-fields').innerHTML = fieldsHtml;
+
+  // Google 이벤트는 수정/삭제 불가
+  const deleteBtn = document.querySelector('#detail-modal .btn-danger');
+  const editBtn = document.querySelector('#detail-modal .btn-save');
+  deleteBtn.style.display = isG ? 'none' : '';
+  editBtn.style.display = isG ? 'none' : '';
+
   document.getElementById('detail-modal').classList.add('open');
 }
 
@@ -1134,6 +1340,7 @@ if (!events.length) {
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────────
+initGoogleAuth();
 render();
 </script>
 </body>
