@@ -735,7 +735,7 @@ let gcalToken = null;
 let gcalConnected = localStorage.getItem('gcalConnected') === 'true';
 let googleEvents = JSON.parse(localStorage.getItem('googleEvents') || '[]');
 let tokenClient = null;
-let needsInteraction = false; // 무음 인증 실패 시 팝업 필요 여부
+let userInitiated = false; // 사용자가 직접 버튼을 눌렀는지 여부
 
 function initGoogleAuth() {
   if (typeof google === 'undefined') {
@@ -748,17 +748,20 @@ function initGoogleAuth() {
     callback: async (resp) => {
       if (resp.error) {
         if (resp.error === 'interaction_required') {
-          // 무음 인증 실패 → 팝업으로 재시도
-          needsInteraction = true;
-          tokenClient.requestAccessToken({ prompt: 'select_account' });
+          // 무음 인증 실패 — 사용자가 직접 눌렀을 때만 팝업
+          if (userInitiated) {
+            userInitiated = false;
+            tokenClient.requestAccessToken({ prompt: 'select_account' });
+          }
           return;
         }
         if (resp.error !== 'popup_closed_by_user') {
           showToast('Google 로그인 실패: ' + resp.error);
         }
+        userInitiated = false;
         return;
       }
-      needsInteraction = false;
+      userInitiated = false;
       gcalToken = resp.access_token;
       gcalConnected = true;
       localStorage.setItem('gcalConnected', 'true');
@@ -768,16 +771,25 @@ function initGoogleAuth() {
 
   if (gcalConnected) {
     updateGcalUI(true);
-    tokenClient.requestAccessToken({ prompt: '' }); // 무음 시도, 실패 시 callback에서 팝업
+    // 페이지 로드 시 조용히 토큰 시도 (실패해도 팝업 안 띄움)
+    tokenClient.requestAccessToken({ prompt: '' });
   }
 }
 
 function handleGcalBtn() {
+  userInitiated = true;
   tokenClient.requestAccessToken({ prompt: gcalConnected ? '' : 'consent' });
 }
 
 function syncGcal() {
-  tokenClient.requestAccessToken({ prompt: '' });
+  if (gcalToken) {
+    // 메모리에 유효한 토큰이 있으면 바로 fetch
+    fetchGcalEvents();
+  } else {
+    // 토큰 없으면 새로 발급 (팝업 허용)
+    userInitiated = true;
+    tokenClient.requestAccessToken({ prompt: '' });
+  }
 }
 
 async function fetchGcalEvents() {
