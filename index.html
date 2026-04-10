@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>업무 달력</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a73e8, #0d47a1);
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    header h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: 0.5px; }
+
+    .header-right { display: flex; gap: 10px; align-items: center; }
+
+    .btn {
+      padding: 7px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn-primary { background: white; color: #1a73e8; }
+    .btn-primary:hover { background: #e8f0fe; }
+    .btn-ghost { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.4); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.25); }
+    .btn-danger { background: #e53935; color: white; }
+    .btn-danger:hover { background: #c62828; }
+
+    .main-layout {
+      display: flex;
+      gap: 20px;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
+    .sidebar-card h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 12px;
+    }
+
+    /* Mini calendar */
+    .mini-cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .mini-cal-nav span {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .mini-cal-nav button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      color: #555;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .mini-cal-nav button:hover { background: #f0f2f5; }
+
+    .mini-cal table { width: 100%; border-collapse: collapse; }
+    .mini-cal th { font-size: 0.72rem; color: #aaa; text-align: center; padding: 3px; }
+    .mini-cal td {
+      text-align: center;
+      padding: 4px 2px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+    }
+    .mini-cal td:hover { background: #e8f0fe; }
+    .mini-cal td.today { background: #1a73e8; color: white; border-radius: 50%; font-weight: bold; }
+    .mini-cal td.other-month { color: #ccc; }
+    .mini-cal td.has-event::after {
+      content: '';
+      display: block;
+      width: 4px;
+      height: 4px;
+      background: #1a73e8;
+      border-radius: 50%;
+      margin: 1px auto 0;
+    }
+    .mini-cal td.today.has-event::after { background: white; }
+
+    /* Upcoming events */
+    .upcoming-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .upcoming-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .upcoming-item:hover { background: #f0f2f5; }
+
+    .upcoming-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .upcoming-info { flex: 1; min-width: 0; }
+    .upcoming-info .title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .upcoming-info .date { font-size: 0.75rem; color: #888; margin-top: 2px; }
+
+    .empty-upcoming { font-size: 0.82rem; color: #aaa; text-align: center; padding: 12px 0; }
+
+    /* Category filter */
+    .category-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .category-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    .category-item:hover { background: #f0f2f5; }
+
+    .cat-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .category-item input[type="checkbox"] { margin-right: 2px; }
+
+    /* Main calendar */
+    .calendar-area { flex: 1; min-width: 0; }
+
+    .cal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .cal-header h2 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+
+    .cal-nav { display: flex; gap: 6px; }
+
+    .cal-nav button {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+
+    .cal-nav button:hover { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; }
+    .cal-nav .today-btn { font-weight: 600; }
+
+    .view-tabs { display: flex; gap: 4px; }
+
+    .view-tab {
+      padding: 6px 14px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.2s;
+    }
+
+    .view-tab.active { background: #1a73e8; color: white; border-color: #1a73e8; }
+
+    /* Month view */
+    .calendar-grid {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .cal-days-header {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      background: #f8f9fa;
+      border-bottom: 1px solid #eee;
+    }
+
+    .cal-days-header div {
+      padding: 10px;
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .cal-days-header div:first-child { color: #e53935; }
+    .cal-days-header div:last-child { color: #1a73e8; }
+
+    .cal-body { display: grid; grid-template-columns: repeat(7, 1fr); }
+
+    .cal-cell {
+      min-height: 110px;
+      border-right: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+      padding: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      position: relative;
+    }
+
+    .cal-cell:hover { background: #fafbff; }
+    .cal-cell:nth-child(7n) { border-right: none; }
+
+    .cal-cell.other-month { background: #f8f9fa; }
+    .cal-cell.other-month .day-num { color: #ccc; }
+
+    .cal-cell.today { background: #e8f0fe; }
+    .cal-cell.today .day-num {
+      background: #1a73e8;
+      color: white;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .day-num {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cal-cell:nth-child(7n+1) .day-num { color: #e53935; }
+    .cal-cell:nth-child(7n) .day-num { color: #1a73e8; }
+    .cal-cell.today .day-num { color: white !important; }
+
+    .event-chip {
+      font-size: 0.72rem;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-bottom: 2px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 500;
+      line-height: 1.6;
+      transition: opacity 0.15s;
+    }
+
+    .event-chip:hover { opacity: 0.8; }
+
+    .more-events {
+      font-size: 0.72rem;
+      color: #888;
+      padding: 1px 4px;
+      cursor: pointer;
+    }
+
+    .more-events:hover { text-decoration: underline; }
+
+    /* Week view */
+    .week-view {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    .week-header {
+      display: grid;
+      grid-template-columns: 60px repeat(7, 1fr);
+      border-bottom: 1px solid #eee;
+      background: #f8f9fa;
+    }
+
+    .week-header-cell {
+      padding: 10px 6px;
+      text-align: center;
+      font-size: 0.8rem;
+      border-left: 1px solid #eee;
+    }
+
+    .week-header-cell .wday { color: #666; font-weight: 600; text-transform: uppercase; font-size: 0.72rem; }
+    .week-header-cell .wdate { font-size: 1.1rem; font-weight: 700; margin-top: 2px; }
+    .week-header-cell.today-col .wdate {
+      background: #1a73e8;
+      color: white;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 2px auto 0;
+    }
+
+    .week-body {
+      display: grid;
+      grid-template-columns: 60px repeat(7, 1fr);
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .time-col { background: #f8f9fa; }
+    .time-slot {
+      height: 50px;
+      border-bottom: 1px solid #eee;
+      padding: 4px 8px;
+      font-size: 0.72rem;
+      color: #aaa;
+      text-align: right;
+      position: relative;
+    }
+
+    .week-day-col {
+      border-left: 1px solid #eee;
+      position: relative;
+    }
+
+    .week-cell {
+      height: 50px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .week-cell:hover { background: #f0f4ff; }
+
+    .week-event {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      overflow: hidden;
+      z-index: 1;
+      line-height: 1.4;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: white;
+      border-radius: 14px;
+      padding: 28px;
+      width: 440px;
+      max-width: 95vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(-16px) scale(0.97); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    .modal h2 { font-size: 1.15rem; margin-bottom: 20px; color: #1a1a2e; }
+
+    .form-group { margin-bottom: 14px; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border 0.2s;
+      font-family: inherit;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus { border-color: #1a73e8; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .btn-save { background: #1a73e8; color: white; }
+    .btn-save:hover { background: #1558b0; }
+    .btn-cancel { background: #f0f2f5; color: #555; }
+    .btn-cancel:hover { background: #e0e2e5; }
+
+    /* Event detail modal */
+    .detail-modal .event-color-bar {
+      height: 5px;
+      border-radius: 3px;
+      margin-bottom: 16px;
+    }
+
+    .detail-field {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 0.88rem;
+    }
+
+    .detail-field .icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+    .detail-field .value { flex: 1; }
+    .detail-field .label { font-size: 0.75rem; color: #aaa; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #323232;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 2000;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .main-layout { flex-direction: column; }
+      .sidebar { width: 100%; }
+    }
+
+    @media (max-width: 600px) {
+      .cal-cell { min-height: 70px; }
+      .event-chip { display: none; }
+      .cal-cell.has-event-dot::after {
+        content: '';
+        display: block;
+        width: 5px;
+        height: 5px;
+        background: #1a73e8;
+        border-radius: 50%;
+        margin: 2px auto;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📅 업무 달력</h1>
+  <div class="header-right">
+    <button class="btn btn-ghost" onclick="exportEvents()">내보내기</button>
+    <button class="btn btn-primary" onclick="openAddModal()">+ 일정 추가</button>
+  </div>
+</header>
+
+<div class="main-layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <!-- Mini calendar -->
+    <div class="sidebar-card">
+      <div class="mini-cal-nav">
+        <button onclick="miniPrev()">&#8249;</button>
+        <span id="mini-month-label"></span>
+        <button onclick="miniNext()">&#8250;</button>
+      </div>
+      <div class="mini-cal">
+        <table id="mini-cal-table">
+          <thead>
+            <tr>
+              <th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+            </tr>
+          </thead>
+          <tbody id="mini-cal-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Upcoming events -->
+    <div class="sidebar-card">
+      <h3>다가오는 일정</h3>
+      <div class="upcoming-list" id="upcoming-list"></div>
+    </div>
+
+    <!-- Category filter -->
+    <div class="sidebar-card">
+      <h3>카테고리</h3>
+      <div class="category-list" id="category-list"></div>
+    </div>
+  </aside>
+
+  <!-- Main calendar -->
+  <main class="calendar-area">
+    <div class="cal-header">
+      <h2 id="cal-title"></h2>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <div class="view-tabs">
+          <button class="view-tab active" onclick="setView('month')">월</button>
+          <button class="view-tab" onclick="setView('week')">주</button>
+        </div>
+        <div class="cal-nav">
+          <button onclick="navigate(-1)">&#8249;</button>
+          <button class="today-btn" onclick="goToday()">오늘</button>
+          <button onclick="navigate(1)">&#8250;</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="calendar-container"></div>
+  </main>
+</div>
+
+<!-- Add/Edit event modal -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <h2 id="modal-title">일정 추가</h2>
+    <div class="form-group">
+      <label>제목 *</label>
+      <input type="text" id="ev-title" placeholder="일정 제목" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>날짜 *</label>
+        <input type="date" id="ev-date" />
+      </div>
+      <div class="form-group">
+        <label>카테고리</label>
+        <select id="ev-category">
+          <option value="meeting">회의</option>
+          <option value="deadline">마감</option>
+          <option value="task">업무</option>
+          <option value="vacation">휴가/외출</option>
+          <option value="personal">개인</option>
+          <option value="etc">기타</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>시작 시간</label>
+        <input type="time" id="ev-start" />
+      </div>
+      <div class="form-group">
+        <label>종료 시간</label>
+        <input type="time" id="ev-end" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>장소</label>
+      <input type="text" id="ev-location" placeholder="장소 (선택)" />
+    </div>
+    <div class="form-group">
+      <label>메모</label>
+      <textarea id="ev-memo" rows="3" placeholder="메모 (선택)"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeModals()">취소</button>
+      <button class="btn btn-save btn-primary" onclick="saveEvent()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Event detail modal -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal detail-modal">
+    <div class="event-color-bar" id="detail-color-bar"></div>
+    <h2 id="detail-title"></h2>
+    <div id="detail-fields"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="deleteEvent()">삭제</button>
+      <button class="btn btn-cancel" onclick="closeModals()">닫기</button>
+      <button class="btn btn-save btn-primary" onclick="editEvent()">수정</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── Data ───────────────────────────────────────────────────────────────────
+const CATEGORIES = {
+  meeting:  { label: '회의',    color: '#1a73e8', bg: '#e8f0fe' },
+  deadline: { label: '마감',    color: '#e53935', bg: '#fce4ec' },
+  task:     { label: '업무',    color: '#2e7d32', bg: '#e8f5e9' },
+  vacation: { label: '휴가/외출', color: '#f9a825', bg: '#fff8e1' },
+  personal: { label: '개인',    color: '#7b1fa2', bg: '#f3e5f5' },
+  etc:      { label: '기타',    color: '#546e7a', bg: '#eceff1' },
+};
+
+let events = JSON.parse(localStorage.getItem('workCalEvents') || '[]');
+let hiddenCats = JSON.parse(localStorage.getItem('workCalHiddenCats') || '[]');
+
+function saveData() {
+  localStorage.setItem('workCalEvents', JSON.stringify(events));
+  localStorage.setItem('workCalHiddenCats', JSON.stringify(hiddenCats));
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let currentDate = new Date();
+let viewMode = 'month';
+let editingId = null;
+let detailId = null;
+
+const today = new Date();
+today.setHours(0,0,0,0);
+
+function fmtDate(d) {
+  return d.toISOString().slice(0,10);
+}
+
+function parseDate(s) {
+  const [y,m,d] = s.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function render() {
+  renderCalTitle();
+  renderCalendar();
+  renderMiniCal();
+  renderUpcoming();
+  renderCategories();
+}
+
+function renderCalTitle() {
+  const y = currentDate.getFullYear();
+  const m = currentDate.getMonth();
+  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  if (viewMode === 'month') {
+    document.getElementById('cal-title').textContent = `${y}년 ${monthNames[m]}`;
+  } else {
+    const weekStart = getWeekStart(currentDate);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+    document.getElementById('cal-title').textContent =
+      `${weekStart.getFullYear()}년 ${monthNames[weekStart.getMonth()]} ${weekStart.getDate()}일 – ${weekEnd.getDate()}일`;
+  }
+}
+
+function renderCalendar() {
+  const container = document.getElementById('calendar-container');
+  if (viewMode === 'month') renderMonth(container);
+  else renderWeek(container);
+}
+
+// Month view
+function renderMonth(container) {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  let startCell = new Date(firstDay);
+  startCell.setDate(startCell.getDate() - firstDay.getDay());
+
+  let html = `
+    <div class="calendar-grid">
+      <div class="cal-days-header">
+        <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+      </div>
+      <div class="cal-body" id="cal-body">`;
+
+  let d = new Date(startCell);
+  for (let i = 0; i < 42; i++) {
+    const ds = fmtDate(d);
+    const isToday = ds === fmtDate(today);
+    const isOther = d.getMonth() !== month;
+    const dayEvents = getEventsForDate(ds);
+
+    let classes = 'cal-cell';
+    if (isToday) classes += ' today';
+    if (isOther) classes += ' other-month';
+
+    html += `<div class="${classes}" onclick="handleCellClick('${ds}', event)" data-date="${ds}">`;
+    html += `<div class="day-num">${d.getDate()}</div>`;
+
+    const visible = dayEvents.slice(0, 3);
+    const overflow = dayEvents.length - 3;
+
+    visible.forEach(ev => {
+      const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+      html += `<div class="event-chip"
+        style="background:${cat.bg};color:${cat.color};border-left:3px solid ${cat.color}"
+        onclick="showDetail('${ev.id}', event)"
+        title="${ev.title}">${ev.title}</div>`;
+    });
+
+    if (overflow > 0) {
+      html += `<div class="more-events">+${overflow}개 더보기</div>`;
+    }
+
+    html += `</div>`;
+    d.setDate(d.getDate() + 1);
+  }
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+
+// Week view
+function renderWeek(container) {
+  const weekStart = getWeekStart(currentDate);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+
+  const dayNames = ['일','월','화','수','목','금','토'];
+  let html = `<div class="week-view">
+    <div class="week-header">
+      <div style="border-left:none;"></div>`;
+
+  days.forEach((d, i) => {
+    const isToday = fmtDate(d) === fmtDate(today);
+    html += `<div class="week-header-cell${isToday ? ' today-col' : ''}">
+      <div class="wday">${dayNames[d.getDay()]}</div>
+      <div class="wdate">${d.getDate()}</div>
+    </div>`;
+  });
+
+  html += `</div><div class="week-body">`;
+
+  // Time column
+  html += `<div class="time-col">`;
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="time-slot">${h.toString().padStart(2,'0')}:00</div>`;
+  }
+  html += `</div>`;
+
+  // Day columns
+  days.forEach(d => {
+    const ds = fmtDate(d);
+    const dayEvs = getEventsForDate(ds);
+    html += `<div class="week-day-col" data-date="${ds}">`;
+
+    for (let h = 0; h < 24; h++) {
+      html += `<div class="week-cell" onclick="handleCellClick('${ds}', event)"></div>`;
+    }
+
+    dayEvs.forEach((ev, idx) => {
+      let topPx = 0, heightPx = 50;
+      if (ev.startTime) {
+        const [sh, sm] = ev.startTime.split(':').map(Number);
+        topPx = (sh + sm/60) * 50;
+        if (ev.endTime) {
+          const [eh, em] = ev.endTime.split(':').map(Number);
+          heightPx = Math.max(24, ((eh + em/60) - (sh + sm/60)) * 50);
+        }
+      } else {
+        topPx = idx * 26;
+        heightPx = 24;
+      }
+      const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+      html += `<div class="week-event"
+        style="top:${topPx}px;height:${heightPx}px;background:${cat.bg};color:${cat.color};border-left:3px solid ${cat.color}"
+        onclick="showDetail('${ev.id}', event)">${ev.title}</div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  html += `</div></div>`;
+  container.innerHTML = html;
+}
+
+function getWeekStart(d) {
+  const s = new Date(d);
+  s.setDate(s.getDate() - s.getDay());
+  s.setHours(0,0,0,0);
+  return s;
+}
+
+function getEventsForDate(ds) {
+  return events.filter(e => e.date === ds && !hiddenCats.includes(e.category));
+}
+
+// Mini calendar
+let miniDate = new Date(today);
+
+function renderMiniCal() {
+  const y = miniDate.getFullYear();
+  const m = miniDate.getMonth();
+  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  document.getElementById('mini-month-label').textContent = `${y}년 ${monthNames[m]}`;
+
+  const firstDay = new Date(y, m, 1);
+  let start = new Date(firstDay);
+  start.setDate(start.getDate() - firstDay.getDay());
+
+  let html = '';
+  for (let row = 0; row < 6; row++) {
+    html += '<tr>';
+    for (let col = 0; col < 7; col++) {
+      const ds = fmtDate(start);
+      const isToday = ds === fmtDate(today);
+      const isOther = start.getMonth() !== m;
+      const hasEvent = events.some(e => e.date === ds && !hiddenCats.includes(e.category));
+      let cls = '';
+      if (isToday) cls += ' today';
+      if (isOther) cls += ' other-month';
+      if (hasEvent) cls += ' has-event';
+      html += `<td class="${cls.trim()}" onclick="miniGoto(${start.getFullYear()},${start.getMonth()},${start.getDate()})">${start.getDate()}</td>`;
+      start.setDate(start.getDate() + 1);
+    }
+    html += '</tr>';
+    if (start.getMonth() !== m && row >= 3) break;
+  }
+  document.getElementById('mini-cal-body').innerHTML = html;
+}
+
+function miniPrev() { miniDate.setMonth(miniDate.getMonth() - 1); renderMiniCal(); }
+function miniNext() { miniDate.setMonth(miniDate.getMonth() + 1); renderMiniCal(); }
+function miniGoto(y, m, d) {
+  currentDate = new Date(y, m, d);
+  render();
+}
+
+// Upcoming
+function renderUpcoming() {
+  const todayStr = fmtDate(today);
+  const upcomingEvs = events
+    .filter(e => e.date >= todayStr && !hiddenCats.includes(e.category))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime||'').localeCompare(b.startTime||''))
+    .slice(0, 7);
+
+  const list = document.getElementById('upcoming-list');
+  if (!upcomingEvs.length) {
+    list.innerHTML = '<div class="empty-upcoming">다가오는 일정 없음</div>';
+    return;
+  }
+
+  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  list.innerHTML = upcomingEvs.map(ev => {
+    const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+    const d = parseDate(ev.date);
+    const dateStr = ev.date === todayStr ? '오늘' :
+      `${monthNames[d.getMonth()]} ${d.getDate()}일`;
+    const timeStr = ev.startTime ? ` ${ev.startTime}` : '';
+    return `<div class="upcoming-item" onclick="showDetail('${ev.id}', event)">
+      <div class="upcoming-dot" style="background:${cat.color}"></div>
+      <div class="upcoming-info">
+        <div class="title">${ev.title}</div>
+        <div class="date">${dateStr}${timeStr}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Categories
+function renderCategories() {
+  const list = document.getElementById('category-list');
+  list.innerHTML = Object.entries(CATEGORIES).map(([key, cat]) => `
+    <label class="category-item">
+      <input type="checkbox" ${hiddenCats.includes(key) ? '' : 'checked'}
+        onchange="toggleCat('${key}', this.checked)" />
+      <div class="cat-dot" style="background:${cat.color}"></div>
+      ${cat.label}
+    </label>
+  `).join('');
+}
+
+function toggleCat(key, checked) {
+  if (checked) hiddenCats = hiddenCats.filter(c => c !== key);
+  else if (!hiddenCats.includes(key)) hiddenCats.push(key);
+  saveData();
+  render();
+}
+
+// ─── Navigation ──────────────────────────────────────────────────────────────
+function navigate(dir) {
+  if (viewMode === 'month') {
+    currentDate.setMonth(currentDate.getMonth() + dir);
+  } else {
+    currentDate.setDate(currentDate.getDate() + dir * 7);
+  }
+  render();
+}
+
+function goToday() {
+  currentDate = new Date(today);
+  render();
+}
+
+function setView(v) {
+  viewMode = v;
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  render();
+}
+
+// ─── Modal ───────────────────────────────────────────────────────────────────
+function openAddModal(dateStr) {
+  editingId = null;
+  document.getElementById('modal-title').textContent = '일정 추가';
+  document.getElementById('ev-title').value = '';
+  document.getElementById('ev-date').value = dateStr || fmtDate(today);
+  document.getElementById('ev-category').value = 'task';
+  document.getElementById('ev-start').value = '';
+  document.getElementById('ev-end').value = '';
+  document.getElementById('ev-location').value = '';
+  document.getElementById('ev-memo').value = '';
+  document.getElementById('add-modal').classList.add('open');
+  setTimeout(() => document.getElementById('ev-title').focus(), 50);
+}
+
+function editEvent() {
+  const ev = events.find(e => e.id === detailId);
+  if (!ev) return;
+  closeModals();
+  editingId = ev.id;
+  document.getElementById('modal-title').textContent = '일정 수정';
+  document.getElementById('ev-title').value = ev.title;
+  document.getElementById('ev-date').value = ev.date;
+  document.getElementById('ev-category').value = ev.category;
+  document.getElementById('ev-start').value = ev.startTime || '';
+  document.getElementById('ev-end').value = ev.endTime || '';
+  document.getElementById('ev-location').value = ev.location || '';
+  document.getElementById('ev-memo').value = ev.memo || '';
+  document.getElementById('add-modal').classList.add('open');
+}
+
+function saveEvent() {
+  const title = document.getElementById('ev-title').value.trim();
+  const date = document.getElementById('ev-date').value;
+  if (!title) { showToast('제목을 입력해주세요.'); return; }
+  if (!date) { showToast('날짜를 선택해주세요.'); return; }
+
+  const ev = {
+    id: editingId || Date.now().toString(),
+    title,
+    date,
+    category: document.getElementById('ev-category').value,
+    startTime: document.getElementById('ev-start').value,
+    endTime: document.getElementById('ev-end').value,
+    location: document.getElementById('ev-location').value.trim(),
+    memo: document.getElementById('ev-memo').value.trim(),
+  };
+
+  if (editingId) {
+    const idx = events.findIndex(e => e.id === editingId);
+    if (idx !== -1) events[idx] = ev;
+    showToast('일정이 수정되었습니다.');
+  } else {
+    events.push(ev);
+    showToast('일정이 추가되었습니다.');
+  }
+
+  saveData();
+  closeModals();
+  render();
+}
+
+function showDetail(id, e) {
+  if (e) e.stopPropagation();
+  const ev = events.find(ev => ev.id === id);
+  if (!ev) return;
+  detailId = id;
+  const cat = CATEGORIES[ev.category] || CATEGORIES.etc;
+
+  document.getElementById('detail-color-bar').style.background = cat.color;
+  document.getElementById('detail-title').textContent = ev.title;
+
+  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const d = parseDate(ev.date);
+  const dateStr = `${d.getFullYear()}년 ${monthNames[d.getMonth()]} ${d.getDate()}일`;
+  const timeStr = ev.startTime ? ` ${ev.startTime}${ev.endTime ? ' ~ ' + ev.endTime : ''}` : '';
+
+  let fieldsHtml = `
+    <div class="detail-field"><span class="icon">📅</span><div class="value">${dateStr}${timeStr}</div></div>
+    <div class="detail-field"><span class="icon">🏷️</span><div class="value" style="color:${cat.color}">${cat.label}</div></div>
+  `;
+  if (ev.location) fieldsHtml += `<div class="detail-field"><span class="icon">📍</span><div class="value">${ev.location}</div></div>`;
+  if (ev.memo) fieldsHtml += `<div class="detail-field"><span class="icon">📝</span><div class="value" style="white-space:pre-wrap">${ev.memo}</div></div>`;
+
+  document.getElementById('detail-fields').innerHTML = fieldsHtml;
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function deleteEvent() {
+  if (!detailId) return;
+  events = events.filter(e => e.id !== detailId);
+  saveData();
+  closeModals();
+  render();
+  showToast('일정이 삭제되었습니다.');
+}
+
+function closeModals() {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+}
+
+function handleCellClick(dateStr, e) {
+  if (e.target.classList.contains('event-chip') || e.target.classList.contains('more-events') || e.target.classList.contains('week-event')) return;
+  openAddModal(dateStr);
+}
+
+// ─── Keyboard shortcuts ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModals();
+  if (e.key === 'Enter' && document.getElementById('add-modal').classList.contains('open')) {
+    if (document.activeElement.tagName !== 'TEXTAREA') saveEvent();
+  }
+});
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModals(); });
+});
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+function exportEvents() {
+  const data = JSON.stringify(events, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `work-calendar-${fmtDate(today)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('일정을 내보냈습니다.');
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ─── Demo events ─────────────────────────────────────────────────────────────
+if (!events.length) {
+  const td = fmtDate(today);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 3);
+  events = [
+    { id: '1', title: '팀 주간 회의', date: td, category: 'meeting', startTime: '10:00', endTime: '11:00', location: '회의실 A', memo: '' },
+    { id: '2', title: '프로젝트 보고서 제출', date: fmtDate(tomorrow), category: 'deadline', startTime: '18:00', endTime: '', location: '', memo: '최종 검토 후 제출' },
+    { id: '3', title: '기획안 작성', date: fmtDate(nextWeek), category: 'task', startTime: '', endTime: '', location: '', memo: '' },
+  ];
+  saveData();
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
